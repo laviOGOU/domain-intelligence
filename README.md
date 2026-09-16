@@ -359,18 +359,27 @@ domain-intelligence/
 
 ### Enchaînement d'une analyse
 
-```mermaid
-flowchart TD
-    A["Analyste : saisie du domaine"] --> B["analyzer.normalize_domain()<br/>extrait le domaine"]
-    B --> C["analyzer.analyze()<br/>appels en parallèle"]
-    C --> D1["providers/rdap.py<br/>RDAP"]
-    C --> D2["providers/network.py<br/>DNS · IP · TLS"]
-    D1 --> E["Fiche consolidée"]
-    D2 --> E
-    E --> F["risk.py<br/>score sur 100 → LOW / MEDIUM / HIGH"]
-    F --> G["db.save_analysis() → Supabase"]
-    G --> H1["web/templates/index.html<br/>fiche + diagramme"]
-    G --> H2["web/templates/history.html<br/>historique"]
+```
+Analyste
+   │  saisit un nom de domaine
+   ▼
+analyzer.normalize_domain()          extrait le domaine d'une URL ou d'une adresse e-mail
+   │
+   ▼
+analyzer.analyze()                   lance les appels EN PARALLÈLE (2 à 4 s au total)
+   ├──► providers/rdap.py            RDAP  : registrar, dates, statuts, serveurs de noms
+   └──► providers/network.py         DNS   : IPv4, NS, MX, TXT
+                                     IP    : pays, opérateur, ASN
+                                     TLS   : validité, émetteur, expiration
+   │
+   ▼
+risk.py                              score sur 100 → LOW / MEDIUM / HIGH
+   │
+   ▼
+db.save_analysis()                   Supabase (file d'attente locale si panne réseau)
+   │
+   ├──► web/templates/index.html     fiche + diagramme de risque
+   └──► web/templates/history.html   historique + répartition des niveaux
 ```
 
 ### Enregistrement dans Supabase — les trois étapes
