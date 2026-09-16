@@ -38,9 +38,10 @@ code { background: #0d141c; padding: 1px 5px; border-radius: 4px; color: var(--m
 .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); }
 .brand em { display: block; font-style: normal; font-size: 11px; color: var(--muted); }
 .logo {
-  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 9px;
-  background: linear-gradient(135deg, #1d4ed8, #0ea5e9); color: #fff;
-  font-weight: 700; font-size: 15px; letter-spacing: .5px;
+  display: block; width: 52px; height: 52px; border-radius: 50%;
+  /* Le halo bleu du logo d'origine a ete detoure avec le fond : on le
+     restitue en CSS pour que la pastille se detache du bandeau sombre. */
+  filter: drop-shadow(0 3px 9px rgba(14, 165, 233, .38));
 }
 nav { display: flex; gap: 6px; }
 nav a {
