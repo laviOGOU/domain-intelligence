@@ -46,8 +46,14 @@ SUPABASE_RETRIES = int(os.getenv("SUPABASE_RETRIES", "3"))
 # --------------------------------------------------------------------------
 # Serveur web
 # --------------------------------------------------------------------------
-HOST = os.getenv("APP_HOST", "127.0.0.1")
-PORT = int(os.getenv("APP_PORT", "5001"))
+# En hébergement conteneurisé (Railway, Render, Fly.io), la plateforme impose
+# son propre port via la variable PORT et attend une écoute sur 0.0.0.0 : une
+# écoute sur 127.0.0.1 y est injoignable et produit « l'application n'a pas
+# répondu ». PORT prime donc sur APP_HOST, qui reste à 127.0.0.1 dans .env pour
+# l'usage local.
+_PLATFORM_PORT = os.getenv("PORT", "").strip()
+PORT = int(_PLATFORM_PORT or os.getenv("APP_PORT", "5001"))
+HOST = "0.0.0.0" if _PLATFORM_PORT else os.getenv("APP_HOST", "127.0.0.1")
 DEBUG = os.getenv("APP_DEBUG", "0") == "1"
 
 # --------------------------------------------------------------------------
