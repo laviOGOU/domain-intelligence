@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}{{ result.get('domain') if result else 'Analyse' }} — Domain Intelligence{% endblock %}
+{% block content %}
+
+<section class="search-panel">
+  <form method="post" action="{{ url_for('analyze_route') }}" class="search-form">
+    <input type="text" name="domain" id="domain"
+           placeholder="exemple.com"
+           value="{{ result.get('domain') if result else '' }}"
+           autocomplete="off" spellcheck="false" autofocus required>
+    <button type="submit">Analyser</button>
+  </form>
+  <p class="hint">
+    Accepte aussi une URL complète ou une adresse e-mail : seul le domaine est conservé.
+    L'analyse interroge RDAP, le DNS, la géolocalisation IP et le certificat TLS.
+  </p>
+</section>
+
+{% if error %}
+<div class="alert error"><strong>Saisie refusée.</strong> {{ error }}</div>
+{% endif %}
+
+{% if saved is not none and result %}
+  {% if saved.get('ok') %}
+  <div class="alert ok">
+    Analyse enregistrée{% if saved.get('id') %} (n° {{ saved.get('id') }}){% endif %}
+    — stockage : {{ saved.get('backend') }}.
+    <a href="{{ url_for('history') }}">Voir l'historique</a>
+  </div>
+  {% elif saved.get('skipped') %}
+  <div class="alert">Analyse non enregistrée (demandé).</div>
+  {% elif saved.get('queued') %}
+  <div class="alert warn">
+    <strong>Analyse mise en attente.</strong> {{ saved.get('error') }}
+    <br><span class="muted small">
+      {{ saved.get('pending') }} analyse(s) en file — renvoi automatique vers Supabase
+      dès que la connexion revient. Aucune analyse n'est perdue.
+    </span>
+  </div>
+  {% else %}
+  <div class="alert warn">
+    <strong>Analyse non enregistrée.</strong> {{ saved.get('error') }}
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if result %}
+<article class="card">
+  <header class="card-head">
+    <div>
+      <h1>{{ result.get('domain') }}</h1>
+      <p class="muted">
+        {%- if result.get('registered') is sameas false -%}
+          Domaine non enregistré auprès du registre
+        {%- elif result.get('tld') -%}
+          Extension .{{ result.get('tld') }}
+          {%- if result.get('nameservers') %} · {{ result.get('nameservers') | length }} serveur(s) de noms{% endif %}
+        {%- else -%}
+          Fiche relue depuis l'historique — relance l'analyse pour le détail complet
+        {%- endif -%}
+      </p>
+    </div>
+    <div class="risk risk-{{ (result.get('risk_level') or 'LOW') | lower }}">
+      <span class="risk-label">{{ result.get('risk_level') }}</span>
+      <span class="risk-score">score {{ result.get('risk_score') if result.get('risk_score') is not none else '—' }}/100</span>
+    </div>
+  </header>
+
+  <p class="summary">{{ result.get('risk_summary') }}</p>
+
+  <div class="facts">
+    <div class="fact">
+      <span class="k">Registrar</span>
+      <span class="v">{{ result.get('registrar') or '— non publié —' }}</span>
+    </div>
+    <div class="fact">
+      <span class="k">Country</span>
+      <span class="v">
+        {{ result.get('country') or '—' }}
+        {%- if result.get('country_code') %} <em>({{ result.get('country_code') }})</em>{% endif %}
+      </span>
+    </div>
+    <div class="fact">
+      <span class="k">IP</span>
+      <span class="v">{{ result.get('ip') or '— aucune —' }}
+        {%- if result.get('all_ips') and result.get('all_ips') | length > 1 %}
+          <em>+{{ result.get('all_ips') | length - 1 }} autre(s)</em>
+        {% endif %}
+      </span>
+    </div>
+    <div class="fact">
+      <span class="k">Domain age</span>
+      <span class="v">
+        {%- if result.get('domain_age_days') is not none %}
+          {{ result.get('domain_age_text') }} <em>({{ result.get('domain_age_days') }} jours)</em>
+        {%- else %}— inconnu —{% endif %}
+      </span>
+    </div>
+    <div class="fact">
+      <span class="k">Hébergeur</span>
+      <span class="v">{{ result.get('isp') or result.get('org') or '—' }}</span>
+    </div>
+    <div class="fact">
+      <span class="k">ASN</span>
+      <span class="v">{{ result.get('asn') or '—' }}</span>
+    </div>
+    <div class="fact">
+      <span class="k">Expiration</span>
+      <span class="v">
+        {%- if result.get('expires_at') %}
+          {{ result.get('expires_at')[:10] }}
+          {%- if result.get('days_until_expiry') is not none %}
+            <em>({{ result.get('days_until_expiry') }} j)</em>
+          {%- endif %}
+        {%- else %}— inconnue —{% endif %}
+      </span>
+    </div>
+    <div class="fact">
+      <span class="k">HTTPS</span>
+      <span class="v">
+        {%- if result.get('https_ok') %}
+          valide <em>(HTTP {{ result.get('https_status') }})</em>
+        {%- else %}indisponible ou invalide{% endif %}
+      </span>
+    </div>
+    <div class="fact">
+      <span class="k">Créé le</span>
+      <span class="v">{{ result.get('created_at_domain')[:10] if result.get('created_at_domain') else '—' }}</span>
+    </div>
+    <div class="fact">
+      <span class="k">Analyse effectuée le</span>
+      <span class="v">{{ (result.get('analyzed_at') or '') | replace('T', ' ') | replace('+00:00', ' UTC') }}</span>
+    </div>
+  </div>
+
+  {% if result.get('risk_factors') %}
+  <section class="block">
+    <h2>Détail du score de risque</h2>
+    <ul class="factors">
+      {% for factor in result.get('risk_factors') %}
+      <li class="{{ 'neg' if factor.points > 0 else ('pos' if factor.points < 0 else 'neutral') }}">
+        <span class="pts">{{ '+' if factor.points > 0 }}{{ factor.points }}</span>
+        <span class="fl">{{ factor.label }}</span>
+        <span class="fd">{{ factor.detail }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="muted small">
+      Seuils : LOW &lt; 25 · MEDIUM 25–54 · HIGH ≥ 55. Le score est borné à [0 ; 100].
+    </p>
+  </section>
+  {% endif %}
+
+  {% if result.get('nameservers') or result.get('dns') %}
+  <section class="block">
+    <h2>Infrastructure</h2>
+    <div class="facts">
+      <div class="fact wide">
+        <span class="k">Serveurs de noms déclarés</span>
+        <span class="v">{{ result.get('nameservers') | join(', ') or '—' }}</span>
+      </div>
+      {% if result.get('dns') %}
+      <div class="fact wide">
+        <span class="k">Enregistrements MX</span>
+        <span class="v">{{ result.get('dns').get('mx') | join(', ') or '—' }}</span>
+      </div>
+      {% endif %}
+      {% if result.get('tls', {}).get('issuer') %}
+      <div class="fact wide">
+        <span class="k">Émetteur du certificat</span>
+        <span class="v">{{ result.get('tls').get('issuer') }}</span>
+      </div>
+      {% endif %}
+      {% if result.get('registry_status') %}
+      <div class="fact wide">
+        <span class="k">Statuts du registre</span>
+        <span class="v">{{ result.get('registry_status') | join(', ') }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if result.get('errors') %}
+  <section class="block">
+    <h2>Limites de cette analyse</h2>
+    <ul class="errors">
+      {% for message in result.get('errors') %}<li>{{ message }}</li>{% endfor %}
+    </ul>
+    <p class="muted small">
+      Ces indisponibilités sont normales : certains registres ne publient pas de RDAP,
+      et tous les domaines n'ont pas de site web. Le score en tient compte.
+    </p>
+  </section>
+  {% endif %}
+
+  <footer class="card-foot">
+    <a class="button ghost" href="{{ url_for('api_analysis', analysis_id=result.get('id')) if result.get('id') else url_for('api_analyze', domain=result.get('domain')) }}">
+      Voir en JSON
+    </a>
+    <button class="ghost" type="button" id="copy-report"
+            data-domain="{{ result.get('domain') }}"
+            data-registrar="{{ result.get('registrar') or '' }}"
+            data-country="{{ result.get('country') or '' }}"
+            data-ip="{{ result.get('ip') or '' }}"
+            data-age="{{ result.get('domain_age_text') or '' }}"
+            data-risk="{{ result.get('risk_level') }}"
+            data-date="{{ (result.get('analyzed_at') or '') | replace('T', ' ') }}">
+      Copier la fiche
+    </button>
+    <a class="button ghost" href="{{ url_for('index') }}">Nouvelle analyse</a>
+  </footer>
+</article>
+{% else %}
+<section class="empty-state">
+  <h2>Aucune analyse pour l'instant</h2>
+  <p>Saisis un domaine ci-dessus. Quelques exemples :</p>
+  <div class="examples">
+    <button class="chip" data-domain="github.com">github.com</button>
+    <button class="chip" data-domain="example.com">example.com</button>
+    <button class="chip" data-domain="secure-login-verify-2026.top">secure-login-verify-2026.top</button>
+  </div>
+  <p class="muted small">
+    Le troisième exemple illustre volontairement un domaine au profil risqué
+    (extension à risque, mots-clés d'hameçonnage).
+  </p>
+</section>
+{% endif %}
+
+{% endblock %}

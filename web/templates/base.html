@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Domain Intelligence{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="logo">DI</span>
+      <span>
+        <strong>Domain Intelligence</strong>
+        <em>évaluation de fiabilité d'un nom de domaine</em>
+      </span>
+    </a>
+    <nav>
+      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}">Analyse</a>
+      <a href="{{ url_for('history') }}" class="{{ 'active' if request.endpoint == 'history' }}">Historique</a>
+    </nav>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <span class="badge {{ 'ok' if backend.ready and backend.backend == 'supabase' else 'warn' }}">
+      {{ backend.backend | upper }}
+    </span>
+    {{ backend.message }}
+    &nbsp;·&nbsp; Sources : RDAP, DNS, ip-api.com, TLS direct
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

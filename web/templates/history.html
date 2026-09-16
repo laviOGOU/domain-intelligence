@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Historique — Domain Intelligence{% endblock %}
+{% block content %}
+
+<section class="stats">
+  <div class="stat">
+    <span class="k">Analyses enregistrées</span>
+    <span class="v">{{ stats.total }}</span>
+  </div>
+  <div class="stat low">
+    <span class="k">Risque faible</span>
+    <span class="v">{{ stats.by_level.LOW }}</span>
+  </div>
+  <div class="stat medium">
+    <span class="k">Risque modéré</span>
+    <span class="v">{{ stats.by_level.MEDIUM }}</span>
+  </div>
+  <div class="stat high">
+    <span class="k">Risque élevé</span>
+    <span class="v">{{ stats.by_level.HIGH }}</span>
+  </div>
+</section>
+
+{% if not listing.ok %}
+<div class="alert error">
+  <strong>Lecture de l'historique impossible.</strong> {{ listing.error }}
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Historique des analyses</h2>
+    <form method="get" action="{{ url_for('history') }}" class="inline-form">
+      <input type="text" name="q" value="{{ search }}" placeholder="filtrer par domaine"
+             autocomplete="off" spellcheck="false">
+      <button type="submit">Filtrer</button>
+      {% if search %}<a class="button ghost" href="{{ url_for('history') }}">Effacer</a>{% endif %}
+    </form>
+  </div>
+
+  {% if listing.rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Domaine</th>
+          <th>Risque</th>
+          <th class="num">Score</th>
+          <th>Registrar</th>
+          <th>Country</th>
+          <th>IP</th>
+          <th>Domain age</th>
+          <th>Analysé le</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in listing.rows %}
+        <tr>
+          <td class="domain-cell">
+            <a href="{{ url_for('analysis_detail', analysis_id=row.id) }}">{{ row.domain }}</a>
+          </td>
+          <td>
+            <span class="badge risk-badge risk-{{ (row.risk_level or 'LOW') | lower }}">
+              {{ row.risk_level }}
+            </span>
+          </td>
+          <td class="num">{{ row.get('risk_score') if row.get('risk_score') is not none else '—' }}</td>
+          <td>{{ row.registrar or '—' }}</td>
+          <td>{{ row.country or '—' }}</td>
+          <td class="mono">{{ row.ip or '—' }}</td>
+          <td>{{ humanize_age(row.get('domain_age_days')) }}</td>
+          <td class="mono">{{ row.analyzed_at | dt }}</td>
+          <td class="actions">
+            <a class="button small ghost" href="{{ url_for('analysis_detail', analysis_id=row.id) }}">Fiche</a>
+            <button class="small ghost danger-text delete-btn" data-id="{{ row.id }}"
+                    data-domain="{{ row.domain }}">Supprimer</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">{{ listing.rows | length }} ligne(s) affichée(s) — maximum 200.</p>
+  {% else %}
+  <div class="empty">
+    {% if search %}
+      Aucun domaine ne correspond à « {{ search }} ».
+    {% else %}
+      Aucune analyse enregistrée. <a href="{{ url_for('index') }}">Lance une première analyse</a>.
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}

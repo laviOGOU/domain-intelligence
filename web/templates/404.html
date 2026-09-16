@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Introuvable — Domain Intelligence{% endblock %}
+{% block content %}
+<section class="empty-state">
+  <h2>Analyse introuvable</h2>
+  <p>Cette fiche n'existe pas (ou a été supprimée).</p>
+  <p>
+    <a class="button" href="{{ url_for('index') }}">Nouvelle analyse</a>
+    <a class="button ghost" href="{{ url_for('history') }}">Historique</a>
+  </p>
+</section>
+{% endblock %}

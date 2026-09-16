@@ -1,0 +1,31 @@
+# ============================================================================
+#  Secrets — NE JAMAIS versionner
+#  .env contient les clés Supabase (URL, clé anon). Sa fuite donnerait un accès
+#  en écriture à la base. Le modèle documenté .env.example, lui, est versionné.
+# ============================================================================
+.env
+.env.local
+*.env
+!.env.example
+
+# --- Environnements virtuels -------------------------------------------------
+.venv/
+venv/
+env/
+
+# --- Cache Python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- Données d'exécution -----------------------------------------------------
+# Historique local, file d'attente de renvoi, sauvegardes de migration :
+# recréés au démarrage, ils ne font pas partie du code.
+storage/*.json
+storage/*.tmp
+
+# --- Supabase CLI ------------------------------------------------------------
+supabase/.temp/
+
+# --- Journaux ----------------------------------------------------------------
+*.log
