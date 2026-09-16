@@ -53,6 +53,9 @@ def inject_globals():
         "backend": db.backend_status(),
         "supabase_configured": config.supabase_configured(),
         "humanize_age": analyzer.humanize_age,
+        # Seuils du score, utilisés par l'échelle du diagramme de risque.
+        "risk_medium": config.RISK_MEDIUM_THRESHOLD,
+        "risk_high": config.RISK_HIGH_THRESHOLD,
     }
 
 

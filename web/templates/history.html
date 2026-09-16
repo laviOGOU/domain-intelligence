@@ -21,6 +21,26 @@
   </div>
 </section>
 
+{# ---- Diagramme de répartition des niveaux sur l'ensemble de l'historique ---- #}
+{% set total = stats.total %}
+{% if total %}
+<section class="distribution">
+  <div class="distribution-track">
+    <span class="low"    style="width: {{ (stats.by_level.LOW / total * 100) | round(3) }}%"></span>
+    <span class="medium" style="width: {{ (stats.by_level.MEDIUM / total * 100) | round(3) }}%"></span>
+    <span class="high"   style="width: {{ (stats.by_level.HIGH / total * 100) | round(3) }}%"></span>
+  </div>
+  <div class="distribution-legend">
+    <span><i class="low"></i> {{ stats.by_level.LOW }} faible(s)
+      — {{ (stats.by_level.LOW / total * 100) | round | int }} %</span>
+    <span><i class="medium"></i> {{ stats.by_level.MEDIUM }} modéré(s)
+      — {{ (stats.by_level.MEDIUM / total * 100) | round | int }} %</span>
+    <span><i class="high"></i> {{ stats.by_level.HIGH }} élevé(s)
+      — {{ (stats.by_level.HIGH / total * 100) | round | int }} %</span>
+  </div>
+</section>
+{% endif %}
+
 {% if not listing.ok %}
 <div class="alert error">
   <strong>Lecture de l'historique impossible.</strong> {{ listing.error }}

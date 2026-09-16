@@ -2,6 +2,35 @@
 {% block title %}{{ result.get('domain') if result else 'Analyse' }} — Domain Intelligence{% endblock %}
 {% block content %}
 
+{% if not result %}
+<section class="hero">
+  <span class="hero-eyebrow">Bienvenue</span>
+  <h1>Sachez à qui vous avez affaire <em>avant</em> de faire confiance à un domaine</h1>
+  <p class="hero-lead">
+    Saisis un nom de domaine : Domain Intelligence interroge le registre RDAP, le DNS,
+    la géolocalisation de l'adresse IP et le certificat TLS, puis attribue un score de
+    risque argumenté sur 100. Chaque analyse est conservée pour être comparée plus tard.
+  </p>
+  <div class="hero-steps">
+    <div class="step">
+      <span class="num">Étape 1</span>
+      <h3>Saisir le domaine</h3>
+      <p>Un nom seul, une URL complète ou une adresse e-mail — seul le domaine est conservé.</p>
+    </div>
+    <div class="step">
+      <span class="num">Étape 2</span>
+      <h3>Croiser les sources</h3>
+      <p>Registrar, pays d'hébergement, âge, expiration, serveurs de noms et certificat.</p>
+    </div>
+    <div class="step">
+      <span class="num">Étape 3</span>
+      <h3>Lire le score</h3>
+      <p>15 règles pondérées donnent un niveau faible, modéré ou élevé, avec le détail de chaque point.</p>
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <section class="search-panel">
   <form method="post" action="{{ url_for('analyze_route') }}" class="search-form">
     <input type="text" name="domain" id="domain"
@@ -45,6 +74,8 @@
 {% endif %}
 
 {% if result %}
+{% set score = result.get('risk_score') %}
+{% set niveau = (result.get('risk_level') or 'LOW') | lower %}
 <article class="card">
   <header class="card-head">
     <div>
@@ -60,13 +91,37 @@
         {%- endif -%}
       </p>
     </div>
-    <div class="risk risk-{{ (result.get('risk_level') or 'LOW') | lower }}">
-      <span class="risk-label">{{ result.get('risk_level') }}</span>
-      <span class="risk-score">score {{ result.get('risk_score') if result.get('risk_score') is not none else '—' }}/100</span>
-    </div>
   </header>
 
-  <p class="summary">{{ result.get('risk_summary') }}</p>
+  {# ---- Diagramme du niveau de risque : jauge circulaire + échelle graduée ---- #}
+  <div class="risk-figure risk-{{ niveau if score is not none else 'none' }}">
+    <div class="gauge" style="--pct: {{ score if score is not none else 0 }}">
+      <div class="gauge-inner">
+        <span class="gauge-score">{{ score if score is not none else '—' }}</span>
+        <span class="gauge-max">/ 100</span>
+      </div>
+    </div>
+    <div>
+      <span class="level-pill risk-{{ niveau if score is not none else 'none' }}">
+        {{ result.get('risk_level') or 'niveau inconnu' }}
+      </span>
+      <p class="summary">{{ result.get('risk_summary') }}</p>
+      <div class="scale">
+        <div class="scale-track">
+          <span class="seg low"  style="width: {{ risk_medium }}%"></span>
+          <span class="seg med"  style="width: {{ risk_high - risk_medium }}%"></span>
+          <span class="seg high" style="width: {{ 100 - risk_high }}%"></span>
+          {% if score is not none %}<span class="scale-cursor" style="left: {{ score }}%"></span>{% endif %}
+        </div>
+        <div class="scale-labels">
+          <span style="left: 0">0 · fiable</span>
+          <span style="left: {{ risk_medium }}%">{{ risk_medium }} · modéré</span>
+          <span style="left: {{ risk_high }}%">{{ risk_high }} · élevé</span>
+          <span style="left: 100%">100 · risqué</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="facts">
     <div class="fact">
@@ -146,7 +201,8 @@
       {% endfor %}
     </ul>
     <p class="muted small">
-      Seuils : LOW &lt; 25 · MEDIUM 25–54 · HIGH ≥ 55. Le score est borné à [0 ; 100].
+      Seuils : LOW &lt; {{ risk_medium }} · MEDIUM {{ risk_medium }}–{{ risk_high - 1 }} · HIGH ≥ {{ risk_high }}.
+      Le score est borné à [0 ; 100].
     </p>
   </section>
   {% endif %}
@@ -211,10 +267,10 @@
     <a class="button ghost" href="{{ url_for('index') }}">Nouvelle analyse</a>
   </footer>
 </article>
+
 {% else %}
-<section class="empty-state">
-  <h2>Aucune analyse pour l'instant</h2>
-  <p>Saisis un domaine ci-dessus. Quelques exemples :</p>
+<section class="panel">
+  <div class="panel-head"><h2>Exemples à essayer</h2></div>
   <div class="examples">
     <button class="chip" data-domain="github.com">github.com</button>
     <button class="chip" data-domain="example.com">example.com</button>
