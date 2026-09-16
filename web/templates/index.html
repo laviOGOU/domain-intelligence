@@ -7,9 +7,10 @@
   <span class="hero-eyebrow">Bienvenue</span>
   <h1>Sachez à qui vous avez affaire <em>avant</em> de faire confiance à un domaine</h1>
   <p class="hero-lead">
-    Saisis un nom de domaine : Domain Intelligence interroge le registre RDAP, le DNS,
-    la géolocalisation de l'adresse IP et le certificat TLS, puis attribue un score de
-    risque argumenté sur 100. Chaque analyse est conservée pour être comparée plus tard.
+    Saisis un nom de domaine : Domain Intelligence interroge l'API RDAP, le DNS,
+    l'API de géolocalisation ip-api.com, le certificat TLS et l'API de réputation
+    urlscan.io, puis attribue un score de risque argumenté sur 100. Chaque analyse
+    est conservée pour être comparée plus tard.
   </p>
   <div class="hero-steps">
     <div class="step">
@@ -25,7 +26,7 @@
     <div class="step">
       <span class="num">Étape 3</span>
       <h3>Lire le score</h3>
-      <p>15 règles pondérées donnent un niveau faible, modéré ou élevé, avec le détail de chaque point.</p>
+      <p>21 règles pondérées donnent un niveau faible, modéré ou élevé, avec le détail de chaque point.</p>
     </div>
   </div>
 </section>
@@ -41,7 +42,8 @@
   </form>
   <p class="hint">
     Accepte aussi une URL complète ou une adresse e-mail : seul le domaine est conservé.
-    L'analyse interroge RDAP, le DNS, la géolocalisation IP et le certificat TLS.
+    L'analyse interroge l'API RDAP, le DNS, l'API ip-api.com, le certificat TLS
+    et l'API urlscan.io.
   </p>
 </section>
 
@@ -234,6 +236,65 @@
       </div>
       {% endif %}
     </div>
+  </section>
+  {% endif %}
+
+  {# ---- Réputation observée par l'API externe urlscan.io ---- #}
+  {% set us = result.get('urlscan') %}
+  {% if us and us.get('available') %}
+  <section class="block">
+    <h2>Réputation web — API urlscan.io</h2>
+    <div class="facts">
+      <div class="fact">
+        <span class="k">Scans publics</span>
+        <span class="v">{{ us.get('total_scans') }}{% if us.get('has_more') %}+{% endif %}
+          <em>observation(s)</em></span>
+      </div>
+      <div class="fact">
+        <span class="k">Réputation</span>
+        <span class="v">{{ us.get('reputation') }}</span>
+      </div>
+      {% if us.get('popularity_rank') is not none %}
+      <div class="fact">
+        <span class="k">Classement de popularité</span>
+        <span class="v">n° {{ us.get('popularity_rank') }}</span>
+      </div>
+      {% endif %}
+      {% if us.get('last_scan') %}
+      <div class="fact">
+        <span class="k">Dernier scan</span>
+        <span class="v">{{ us.get('last_scan')[:10] }}
+          {%- if us.get('last_scan_age_days') is not none %} <em>(il y a {{ us.get('last_scan_age_days') }} j)</em>{% endif %}
+        </span>
+      </div>
+      {% endif %}
+      {% if us.get('observed_host') %}
+      <div class="fact">
+        <span class="k">Hébergeur observé</span>
+        <span class="v">{{ us.get('observed_host') }}</span>
+      </div>
+      {% endif %}
+      {% if us.get('observed_country') %}
+      <div class="fact">
+        <span class="k">Pays observé</span>
+        <span class="v">{{ us.get('observed_country') }}</span>
+      </div>
+      {% endif %}
+      {% if us.get('tls_issuer') %}
+      <div class="fact wide">
+        <span class="k">Certificat observé</span>
+        <span class="v">{{ us.get('tls_issuer') }}
+          {%- if us.get('tls_valid_from') %} <em>(depuis le {{ us.get('tls_valid_from')[:10] }})</em>{% endif %}
+        </span>
+      </div>
+      {% endif %}
+    </div>
+    <p class="muted small">
+      Données publiques relevées par urlscan.io sur les derniers scans de ce domaine.
+      {% if us.get('report_url') %}
+      <a href="{{ us.get('report_url') }}" target="_blank" rel="noopener">Voir le rapport public ↗</a>
+      {% endif %}
+    </p>
   </section>
   {% endif %}
 

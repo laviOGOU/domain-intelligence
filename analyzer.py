@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import risk
-from providers import network, rdap
+from providers import network, rdap, urlscan
 
 logger = logging.getLogger(__name__)
 
@@ -104,12 +104,13 @@ def analyze(domain: str) -> Dict[str, Any]:
     registered = True
     rdap_available = True
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         future_rdap = pool.submit(rdap.lookup, domain)
         future_dns = pool.submit(network.dns_records, domain)
         future_ips = pool.submit(_resolve_and_locate, domain)
         future_https = pool.submit(network.check_https, domain)
         future_tls = pool.submit(network.tls_certificate, domain)
+        future_urlscan = pool.submit(urlscan.lookup, domain)
 
         try:
             rdap_data = future_rdap.result()
@@ -148,6 +149,18 @@ def analyze(domain: str) -> Dict[str, Any]:
             tls_data = {"error": str(exc)}
             errors.append(f"TLS : {exc}")
 
+        try:
+            urlscan_data = future_urlscan.result()
+        except urlscan.UrlscanError as exc:
+            # API externe indisponible ou quota atteint : limite signalée, pas
+            # de pénalité (voir risk.evaluate).
+            urlscan_data = {"available": False, "source": "urlscan.io", "error": str(exc)}
+            errors.append(f"urlscan.io : {exc}")
+        except Exception as exc:                              # noqa: BLE001
+            urlscan_data = {"available": False, "source": "urlscan.io",
+                            "error": f"{type(exc).__name__}: {exc}"}
+            errors.append(f"urlscan.io : {type(exc).__name__}: {exc}")
+
     if not registered:
         rdap_data = {"registrar": None, "age_days": None, "status": [],
                      "nameservers": [], "source": "RDAP (non enregistré)"}
@@ -159,6 +172,7 @@ def analyze(domain: str) -> Dict[str, Any]:
         "ip": ip_info,
         "https": https_data,
         "dns": dns_data,
+        "urlscan": urlscan_data,
         "registered": registered,
         "rdap_available": rdap_available,
     }
@@ -200,6 +214,7 @@ def analyze(domain: str) -> Dict[str, Any]:
         "https_status": https_data.get("status_code"),
         "https_final_url": https_data.get("final_url"),
         "tls": tls_data,
+        "urlscan": urlscan_data,
         "risk_level": evaluation["risk_level"],
         "risk_score": evaluation["risk_score"],
         "risk_factors": evaluation["risk_factors"],

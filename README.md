@@ -88,6 +88,19 @@ la configuration — les modifier dans `.env` met le diagramme à jour automatiq
 Sous le diagramme, chaque règle déclenchée est listée avec les points qu'elle a
 apportés, son libellé et son explication. Le score n'est jamais une boîte noire.
 
+### Réputation web — API urlscan.io
+
+Une rubrique dédiée de la fiche restitue ce que l'API externe urlscan.io a observé
+sur le domaine :
+
+- nombre de scans publics déjà réalisés ;
+- classement de popularité (Cisco Umbrella) et libellé de notoriété ;
+- hébergeur, pays et système autonome réellement observés ;
+- certificat présenté au moment du scan, avec sa date de validité ;
+- lien vers le rapport public complet.
+
+Deux de ces éléments alimentent directement le score (voir le tableau des règles).
+
 ### Historique
 
 Compteurs par niveau, **diagramme de répartition** de l'ensemble des analyses,
@@ -130,15 +143,19 @@ Score sur 100, borné à `[0 ; 100]` :
 | +20 | Le domaine ne résout pas (aucune IP) |
 | +20 | Domaine expiré |
 | +18 | Créé il y a moins d'un an |
+| +15 | Site web injoignable en HTTPS |
 | +15 | Extension à risque (.tk, .ml, .top, .click, .xyz, .zip…) |
+| +12 | Jeune domaine jamais observé par l'API urlscan.io |
 | +12 | Expire dans moins de 60 jours |
 | +10 | Termes sensibles dans le nom (login, verify, secure, account…) |
 | +10 | Redirection vers un autre domaine |
 | +10 | IP signalée comme proxy / VPN |
 | +8 | Registrar non publié |
+| +8 | Domaine établi (1 à 3 ans d'existence) |
 | +8 | Nom contenant 4 chiffres ou plus |
 | +6 | Nom contenant 3 tirets ou plus |
 | +5 | Date de création non publiée |
+| −8 | Domaine parmi les plus visités du web (API urlscan.io, classement ≤ 100 000) |
 | −10 | Plus de 10 ans d'existence **et** HTTPS valide |
 
 Niveaux : **LOW** < 25 · **MEDIUM** 25–54 · **HIGH** ≥ 55 (seuils réglables dans `.env`).
@@ -187,19 +204,71 @@ Analyse effectuée le : 2026-09-15 18:39:50
 
 ## 5. API utilisée
 
-Aucune clé d'API n'est nécessaire pour les sources externes.
+### Les API externes réellement appelées par l'application
 
-| Source | Type | Ce qu'elle fournit |
-|---|---|---|
-| **RDAP** — `rdap.org/domain/<domaine>` | REST JSON | Registrar, dates de création / expiration / modification, statuts du registre, serveurs de noms. Successeur normalisé de WHOIS |
-| **ip-api.com** | REST JSON | Pays, ville, opérateur (ISP), organisation, ASN, indicateurs d'hébergement et de proxy, pour l'IP du domaine |
-| **DNS** (dnspython) | Protocole DNS | Adresses IPv4, enregistrements NS / MX / TXT |
-| **TLS direct** (module `ssl`) | Poignée de main TLS | Validité du certificat, émetteur, date d'expiration |
-| **Supabase REST** | REST JSON | Lecture et écriture de la table `domain_analyses` (clé `anon`) |
+Chaque analyse déclenche **cinq appels réseau simultanés**, et chaque réponse est
+exploitée : elle remplit la fiche, alimente le score de risque, ou les deux.
 
-**Politique de panne** : si une source est injoignable, l'analyse continue et la
-limite est affichée dans la section « Limites de cette analyse » de la fiche. Les
-appels sont lancés en parallèle, ce qui ramène l'analyse complète à 2–4 secondes.
+| # | API externe | Endpoint réellement appelé | Code | Ce que la réponse apporte |
+|---|---|---|---|---|
+| 1 | **RDAP** — rdap.org | `GET https://rdap.org/domain/<domaine>` | `providers/rdap.py` | Registrar, dates de création / expiration / modification, statuts du registre, serveurs de noms → affichage + **3 règles de score** |
+| 2 | **ip-api.com** | `GET http://ip-api.com/json/<ip>` | `providers/network.py` | Pays, ville, fournisseur, organisation, ASN, indicateurs proxy / VPN → affichage + **2 règles de score** |
+| 3 | **urlscan.io** | `GET https://urlscan.io/api/v1/search/?q=page.domain:<domaine>&size=1` | `providers/urlscan.py` | Nombre de scans publics, classement de popularité Cisco Umbrella, hébergeur et pays réellement observés, certificat présenté → affichage + **2 règles de score** |
+| 4 | **DNS** | résolution A / NS / MX / TXT | `providers/network.py` | Adresses IPv4, serveurs de noms, enregistrements de messagerie → affichage + **1 règle de score** |
+| 5 | **TLS** | poignée de main `ssl` sur le port 443 | `providers/network.py` | Validité, émetteur et date d'expiration du certificat → affichage + **1 règle de score** |
+
+Et en écriture : **Supabase REST** (`POST /rest/v1/domain_analyses`), appelée par
+`db.py` après chaque analyse.
+
+> **Aucune clé ni inscription n'est nécessaire** pour ces API : elles sont ouvertes.
+> C'est une facilité d'usage, pas une absence d'API.
+
+### Preuve d'appel réel
+
+Voici l'appel que l'application fait réellement à l'API urlscan.io :
+
+```bash
+curl "https://urlscan.io/api/v1/search/?q=page.domain:github.com&size=1"
+```
+
+```json
+{
+  "total": 10000,
+  "has_more": true,
+  "results": [
+    {
+      "page": {
+        "url": "https://github.com/",
+        "server": "github.com",
+        "ip": "140.82.121.3",
+        "asn": "AS36459",
+        "asnname": "GITHUB - GitHub, Inc., US",
+        "country": "DE",
+        "umbrellaRank": 1699,
+        "tlsIssuer": "Sectigo Public Server Authentication CA DV E36"
+      },
+      "task": { "time": "2026-09-16T16:46:27.379Z", "uuid": "01a0ab1c-b3e9-70f7-8012-84554a0446e5" }
+    }
+  ]
+}
+```
+
+Ces valeurs se retrouvent telles quelles dans la fiche, à la rubrique
+**« Réputation web — API urlscan.io »** (capture en section 9) :
+10000 observations, notoriété élevée, classement n° 1699, hébergeur
+« GITHUB - GitHub, Inc., US », pays observé DE.
+
+Appel à l'API RDAP, sur le même principe :
+
+```bash
+curl "https://rdap.org/domain/github.com"
+```
+
+**Politique de panne** : les appels sont lancés en parallèle dans un
+`ThreadPoolExecutor`. Si une API est injoignable ou refuse la requête (quota
+dépassé), la limite est écrite dans la rubrique « Limites de cette analyse » de la
+fiche et **le score n'est pas pénalisé** : c'est notre panne, pas un risque du
+domaine analysé.
 
 ---
 
@@ -339,8 +408,9 @@ domain-intelligence/
 ├── db.py                           persistance : Supabase, file d'attente, repli local
 ├── config.py                       configuration (.env) et seuils
 ├── providers/
-│   ├── rdap.py                     interrogation RDAP (registrar, dates, statuts)
-│   └── network.py                  DNS, géolocalisation IP, HTTPS, certificat TLS
+│   ├── rdap.py                     API RDAP (registrar, dates, statuts)
+│   ├── network.py                  DNS, API ip-api.com, HTTPS, certificat TLS
+│   └── urlscan.py                  API urlscan.io (réputation, popularité, hébergeur)
 ├── web/
 │   ├── templates/                  base, index (bienvenue + fiche), history, 404
 │   └── static/
@@ -367,10 +437,11 @@ analyzer.normalize_domain()          extrait le domaine d'une URL ou d'une adres
    │
    ▼
 analyzer.analyze()                   lance les appels EN PARALLÈLE (2 à 4 s au total)
-   ├──► providers/rdap.py            RDAP  : registrar, dates, statuts, serveurs de noms
-   └──► providers/network.py         DNS   : IPv4, NS, MX, TXT
-                                     IP    : pays, opérateur, ASN
-                                     TLS   : validité, émetteur, expiration
+   ├──► providers/rdap.py            API RDAP       : registrar, dates, statuts, NS
+   ├──► providers/network.py         DNS            : IPv4, NS, MX, TXT
+   │                                 API ip-api.com : pays, opérateur, ASN, proxy
+   │                                 TLS            : validité, émetteur, expiration
+   └──► providers/urlscan.py         API urlscan.io : scans, popularité, hébergeur observé
    │
    ▼
 risk.py                              score sur 100 → LOW / MEDIUM / HIGH
@@ -399,11 +470,12 @@ L'enregistrement est **automatique** : `app.py` appelle `db.save_analysis(result
 |---|---|
 | `app.py` | Routes HTTP, API JSON, contexte des gabarits |
 | `analyzer.py` | Normalise la saisie, lance les appels externes en parallèle, assemble la fiche |
-| `risk.py` | Applique les 15 règles pondérées et détermine le niveau |
+| `risk.py` | Applique les 21 règles pondérées et détermine le niveau |
 | `db.py` | Écrit et lit les analyses : Supabase en priorité, file d'attente, repli local |
 | `config.py` | Lit `.env`, expose les seuils et les points de configuration |
-| `providers/rdap.py` | Interroge RDAP et normalise la réponse du registre |
-| `providers/network.py` | Résolution DNS, géolocalisation IP, vérification HTTPS et certificat |
+| `providers/rdap.py` | Interroge l'API RDAP et normalise la réponse du registre |
+| `providers/network.py` | Résolution DNS, API ip-api.com, vérification HTTPS et certificat |
+| `providers/urlscan.py` | Interroge l'API urlscan.io : réputation, popularité, hébergeur observé |
 
 ---
 
@@ -424,6 +496,10 @@ L'enregistrement est **automatique** : `app.py` appelle `db.save_analysis(result
 ### Historique — compteurs, répartition et tableau
 
 ![Historique](captures/17_historique_repartition.png)
+
+### Rubrique « Réputation web — API urlscan.io » dans la fiche
+
+![Bloc de réputation alimenté par l'API urlscan.io](captures/23_api_urlscan.png)
 
 ### Configuration du stockage dans Supabase
 

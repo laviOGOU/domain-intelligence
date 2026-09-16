@@ -146,6 +146,22 @@ def evaluate(data: Dict[str, Any]) -> Dict[str, Any]:
         _add(factors, "Proxy ou VPN détecté", 10,
              "L'adresse IP est signalée comme proxy/VPN, ce qui masque l'hébergeur réel.")
 
+    # 10. Réputation observée via urlscan.io (API externe)
+    urlscan = data.get("urlscan") or {}
+    if urlscan.get("available"):
+        rank = urlscan.get("popularity_rank")
+        total = urlscan.get("total_scans") or 0
+        age = rdap.get("age_days")
+        if isinstance(rank, int) and rank <= 100_000:
+            _add(factors, "Domaine parmi les plus visités", -8,
+                 f"Classé n° {rank} des domaines les plus consultés du web "
+                 "(Cisco Umbrella, relevé par urlscan.io).")
+        elif total == 0 and isinstance(age, int) and age < 365:
+            _add(factors, "Jeune domaine jamais observé", 12,
+                 "Aucun scan public de ce domaine sur urlscan.io alors qu'il a moins "
+                 f"d'un an ({age} jours) : il n'a encore attiré l'attention d'aucun "
+                 "analyste, ce qui est fréquent pour les domaines frauduleux très récents.")
+
     # Bonus : ancienneté + chiffrement correct
     age = rdap.get("age_days")
     if age is not None and age >= 3650 and https.get("ok"):
