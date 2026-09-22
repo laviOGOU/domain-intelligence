@@ -1,13 +1,6 @@
 # Domain Intelligence
 
-**Analyse de fiabilité d'un nom de domaine** — application **Python / Flask**.
-
-> Saisir un domaine → interroger des API externes → obtenir une fiche complète,
-> un score de risque argumenté sur 100, et un historique consultable.
-
 **Démonstration en ligne : <https://domain-intelligence.up.railway.app/>**
-
-![Écran d'accueil](captures/15_accueil_bienvenue.png)
 
 ---
 
@@ -64,10 +57,33 @@ Ce que l'outil apporte concrètement :
 | 6 | Enregistrement dans Supabase | `db.py` (`save_analysis`) |
 | 7 | Affichage de l'historique | `web/templates/history.html` + `db.list_analyses()` |
 
-### Écran d'accueil
 
-Message de bienvenue, rappel des trois étapes de l'analyse et exemples cliquables
-pour démarrer en un clic.
+
+### Conclusion en langage courant — placée avant le détail technique
+
+La fiche s'ouvre sur une conclusion écrite pour quelqu'un qui n'est pas
+informaticien. Elle répond à trois questions, dans cet ordre :
+
+1. **Est-ce dangereux ?** — une phrase, sans aucun terme technique.
+2. **Qu'est-ce que je fais ?** — une consigne concrète, adaptée au niveau :
+   ne pas ouvrir, changer son mot de passe, ou simplement vérifier la barre
+   d'adresse du navigateur.
+3. **Pourquoi ?** — ce qui pose problème et ce qui rassure, en français courant,
+   chaque point grave signalé comme tel.
+
+S'y ajoute un volet repliable, **« ce que cette analyse ne permet pas
+d'affirmer »**. Il est essentiel : sans lui, un lecteur qui voit « aucun signe
+défavorable » alors que la moitié des sources a échoué serait faussement
+rassuré. Il rappelle aussi, systématiquement, qu'un site peut être
+techniquement irréprochable et malhonnête — l'analyse porte sur la technique,
+pas sur la moralité du propriétaire.
+
+Le vocabulaire de cette section est vérifié automatiquement : la suite de tests
+refuse les termes « RDAP », « TLS », « DNS », « API », « ASN », « HTTP »,
+« registrar » ou « SSL » dans la conclusion et dans le conseil.
+
+Le détail technique — jauge, score sur 100, facteurs chiffrés, infrastructure —
+reste présent, juste en dessous. Il s'adresse à ceux qui le cherchent.
 
 ### Diagramme de risque
 
@@ -204,24 +220,62 @@ Analyse effectuée le : 2026-09-15 18:39:50
 
 ## 5. API utilisée
 
-### Les API externes réellement appelées par l'application
+### Les sources réellement interrogées par l'application
 
-Chaque analyse déclenche **cinq appels réseau simultanés**, et chaque réponse est
-exploitée : elle remplit la fiche, alimente le score de risque, ou les deux.
+Chaque analyse déclenche **neuf appels réseau simultanés**, et chaque réponse est
+exploitée : elle remplit la fiche, alimente le score, ou les deux.
 
-| # | API externe | Endpoint réellement appelé | Code | Ce que la réponse apporte |
-|---|---|---|---|---|
-| 1 | **RDAP** — rdap.org | `GET https://rdap.org/domain/<domaine>` | `providers/rdap.py` | Registrar, dates de création / expiration / modification, statuts du registre, serveurs de noms → affichage + **3 règles de score** |
-| 2 | **ip-api.com** | `GET http://ip-api.com/json/<ip>` | `providers/network.py` | Pays, ville, fournisseur, organisation, ASN, indicateurs proxy / VPN → affichage + **2 règles de score** |
-| 3 | **urlscan.io** | `GET https://urlscan.io/api/v1/search/?q=page.domain:<domaine>&size=1` | `providers/urlscan.py` | Nombre de scans publics, classement de popularité Cisco Umbrella, hébergeur et pays réellement observés, certificat présenté → affichage + **2 règles de score** |
-| 4 | **DNS** | résolution A / NS / MX / TXT | `providers/network.py` | Adresses IPv4, serveurs de noms, enregistrements de messagerie → affichage + **1 règle de score** |
-| 5 | **TLS** | poignée de main `ssl` sur le port 443 | `providers/network.py` | Validité, émetteur et date d'expiration du certificat → affichage + **1 règle de score** |
+**Sources sans clé** — elles fonctionnent dès l'installation.
+
+| # | Source | Ce qu'elle apporte | Code |
+|---|---|---|---|
+| 1 | **RDAP** — norme de l'ICANN | Qui a enregistré le domaine, quand, jusqu'à quand, statuts du registre. Publié par les registres eux-mêmes : c'est la donnée officielle | `providers/rdap.py` |
+| 2 | **Cloudflare 1.1.1.1** et **Google 8.8.8.8**, en HTTPS | Les adresses réelles, vues par deux résolveurs publics indépendants | `providers/dns_doh.py` |
+| 3 | **RDAP pour les adresses IP** | Le titulaire *enregistré* du bloc d'adresses — un fait de registre, auprès d'ARIN, RIPE ou APNIC | `providers/ip_info.py` |
+| 4 | **IPinfo** | La localisation *estimée* de l'adresse : pays, ville, opérateur, ASN | `providers/ip_info.py` |
+| 5 | **Qualys SSL Labs** | Une note de **A+ à F** sur la configuration du chiffrement — la référence du secteur | `providers/ssl_labs.py` |
+| 6 | **Journaux de transparence des certificats** (crt.sh) | Les sous-domaines révélés par les certificats émis, et ceux qui n'auraient pas dû être publics | `providers/cert_transparency.py` |
+| 7 | **urlscan.io** | Ce qui a été réellement observé sur le domaine : hébergeur, pays, popularité | `providers/urlscan.py` |
+| 8 | **TLS direct** | Le certificat présenté à l'instant, y compris s'il est invalide | `providers/network.py` |
+
+**Sources facultatives** — sans clé, elles sont absentes de la fiche et signalées
+comme telles. Jamais de résultat inventé pour combler le vide.
+
+| # | Source | Ce qu'elle apporte | Activation |
+|---|---|---|---|
+| 9 | **VirusTotal** | Le verdict de plus de 70 moteurs antivirus. C'est la source la plus parlante, et la seule à confirmer un danger | `VIRUSTOTAL_KEY` |
 
 Et en écriture : **Supabase REST** (`POST /rest/v1/domain_analyses`), appelée par
 `db.py` après chaque analyse.
 
-> **Aucune clé ni inscription n'est nécessaire** pour ces API : elles sont ouvertes.
-> C'est une facilité d'usage, pas une absence d'API.
+### Ce qui a changé, et pourquoi
+
+Trois sources de la version précédente ont été remplacées parce qu'elles
+introduisaient des imprécisions.
+
+**Le résolveur DNS du système** (remplacé par Cloudflare et Google en HTTPS). La
+version précédente interrogeait le résolveur de la machine. Deux personnes
+analysant le même domaine pouvaient donc obtenir des adresses différentes, sans
+qu'aucune des deux réponses soit fausse : cela dépendait de leur fournisseur
+d'accès. Deux résolveurs publics fixent la référence, et le fait qu'ils
+divergent est lui-même une information.
+
+**ip-api.com en HTTP** (remplacé par RDAP/IP + IPinfo). L'offre gratuite
+d'ip-api.com n'est accessible qu'en HTTP : les requêtes circulaient en clair.
+Surtout, elle confondait deux questions distinctes. Un bloc d'adresses est
+officiellement alloué à une organisation — c'est un fait de registre, vérifiable
+— tandis que la ville associée à une adresse est une estimation. La fiche
+sépare désormais les deux, et nomme la source de chacune.
+
+**L'absence de vérification par des tiers** (complétée par SSL Labs, VirusTotal
+et les journaux de certificats). La version précédente lisait le certificat
+présenté, ce qui ne dit rien de la qualité de la configuration : un serveur peut
+présenter un certificat valide et accepter encore TLS 1.0. Une note SSL Labs, un
+verdict d'antivirus et la liste des sous-domaines exposés rendent visibles des
+faiblesses qu'aucune lecture de certificat ne révèle.
+
+> **Aucune clé n'est nécessaire** pour les huit premières sources. La neuvième
+> est facultative et son absence est déclarée, jamais masquée.
 
 ### Preuve d'appel réel
 
@@ -258,7 +312,7 @@ Ces valeurs se retrouvent telles quelles dans la fiche, à la rubrique
 10000 observations, notoriété élevée, classement n° 1699, hébergeur
 « GITHUB - GitHub, Inc., US », pays observé DE.
 
-Appel à l'API RDAP, sur le même principe :
+Appel RDAP, sur le même principe :
 
 ```bash
 curl "https://rdap.org/domain/github.com"
@@ -336,7 +390,15 @@ Toutes les valeurs se placent dans un fichier **`.env`** à la racine du projet,
 | `APP_PORT` | non | Port d'écoute local (défaut : `5001`) | `5001` |
 | `APP_DEBUG` | non | Mode debug (`1` pour activer) | `0` |
 | `RDAP_ENDPOINT` | non | Gabarit de l'URL RDAP | `https://rdap.org/domain/{domain}` |
-| `IP_API_ENDPOINT` | non | Gabarit de l'URL de géolocalisation | `http://ip-api.com/json/{ip}` |
+| `DOH_CLOUDFLARE` | non | Résolveur DNS public (HTTPS) | `https://cloudflare-dns.com/dns-query` |
+| `DOH_GOOGLE` | non | Second résolveur, pour recoupement | `https://dns.google/resolve` |
+| `RDAP_IP_ENDPOINT` | non | Titulaire officiel d'une adresse IP | `https://rdap.org/ip/{ip}` |
+| `IPINFO_ENDPOINT` | non | Localisation estimée d'une adresse | `https://ipinfo.io/{ip}/json` |
+| `IPINFO_TOKEN` | **non** | Jeton IPinfo, lève la limite d'usage | *(vide)* |
+| `SSLLABS_ENDPOINT` | non | Note de configuration TLS | `https://api.ssllabs.com/api/v3/analyze` |
+| `SSLLABS_MAX_WAIT` | non | Attente maximale pour SSL Labs, en secondes. `0` désactive la source | `45` |
+| `VIRUSTOTAL_KEY` | **non** | Réputation par les antivirus. Sans elle, la source est déclarée absente | *(vide)* |
+| `CRTSH_ENDPOINT` | non | Journaux publics de certificats | `https://crt.sh/` |
 | `HTTP_TIMEOUT` | non | Délai maximal par appel externe, en secondes | `15` |
 | `RISK_MEDIUM_THRESHOLD` | non | Seuil du niveau modéré | `25` |
 | `RISK_HIGH_THRESHOLD` | non | Seuil du niveau élevé | `55` |
@@ -408,9 +470,14 @@ domain-intelligence/
 ├── db.py                           persistance : Supabase, file d'attente, repli local
 ├── config.py                       configuration (.env) et seuils
 ├── providers/
-│   ├── rdap.py                     API RDAP (registrar, dates, statuts)
-│   ├── network.py                  DNS, API ip-api.com, HTTPS, certificat TLS
-│   └── urlscan.py                  API urlscan.io (réputation, popularité, hébergeur)
+│   ├── rdap.py                     RDAP domaine — registrar, dates, statuts (ICANN)
+│   ├── dns_doh.py                  Résolution par Cloudflare et Google, en HTTPS
+│   ├── ip_info.py                  Titulaire du bloc (RDAP) + localisation (IPinfo)
+│   ├── ssl_labs.py                 Note de A+ à F sur le chiffrement (Qualys)
+│   ├── cert_transparency.py        Sous-domaines révélés par les certificats (crt.sh)
+│   ├── virus_total.py              Verdict des moteurs antivirus (clé facultative)
+│   ├── network.py                  Vérification HTTPS directe, certificat présenté
+│   └── urlscan.py                  urlscan.io (réputation, popularité, hébergeur)
 ├── web/
 │   ├── templates/                  base, index (bienvenue + fiche), history, 404
 │   └── static/
@@ -437,10 +504,13 @@ analyzer.normalize_domain()          extrait le domaine d'une URL ou d'une adres
    │
    ▼
 analyzer.analyze()                   lance les appels EN PARALLÈLE (2 à 4 s au total)
-   ├──► providers/rdap.py            API RDAP       : registrar, dates, statuts, NS
-   ├──► providers/network.py         DNS            : IPv4, NS, MX, TXT
-   │                                 API ip-api.com : pays, opérateur, ASN, proxy
-   │                                 TLS            : validité, émetteur, expiration
+   ├──► providers/rdap.py            RDAP domaine   : registrar, dates, statuts, NS
+   ├──► providers/dns_doh.py         Cloudflare+Google : adresses, NS, MX, TXT
+   ├──► providers/ip_info.py         RDAP/IP + IPinfo : titulaire du bloc, localisation
+   ├──► providers/ssl_labs.py        Qualys SSL Labs : note de A+ à F
+   ├──► providers/virus_total.py     VirusTotal      : verdict des antivirus (si clé)
+   ├──► providers/cert_transparency.py  crt.sh       : sous-domaines, services exposés
+   ├──► providers/network.py         TLS direct     : certificat présenté à l'instant
    └──► providers/urlscan.py         API urlscan.io : scans, popularité, hébergeur observé
    │
    ▼
@@ -473,8 +543,14 @@ L'enregistrement est **automatique** : `app.py` appelle `db.save_analysis(result
 | `risk.py` | Applique les 21 règles pondérées et détermine le niveau |
 | `db.py` | Écrit et lit les analyses : Supabase en priorité, file d'attente, repli local |
 | `config.py` | Lit `.env`, expose les seuils et les points de configuration |
-| `providers/rdap.py` | Interroge l'API RDAP et normalise la réponse du registre |
-| `providers/network.py` | Résolution DNS, API ip-api.com, vérification HTTPS et certificat |
+| `providers/rdap.py` | Interroge le registre via RDAP (norme ICANN) et normalise la réponse |
+| `providers/dns_doh.py` | Résout un domaine auprès de deux résolveurs publics en HTTPS, et croise leurs réponses |
+| `providers/ip_info.py` | Sépare le titulaire *enregistré* d'un bloc d'adresses (RDAP) de sa localisation *estimée* (IPinfo) |
+| `providers/ssl_labs.py` | Obtient la note de configuration TLS auprès de Qualys SSL Labs, en interrogeant progressivement |
+| `providers/cert_transparency.py` | Recense les sous-domaines révélés par les journaux de certificats et repère ceux qui exposent des services |
+| `providers/virus_total.py` | Recueille le verdict des moteurs antivirus. S'efface proprement si la clé est absente |
+| `providers/network.py` | Vérifie HTTPS en direct et lit le certificat réellement présenté |
+| `explications.py` | Traduit une analyse technique en conclusion, conseil et signes en français courant |
 | `providers/urlscan.py` | Interroge l'API urlscan.io : réputation, popularité, hébergeur observé |
 
 ---

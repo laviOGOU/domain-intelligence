@@ -11,8 +11,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+import explications
 import risk
-from providers import network, rdap, urlscan
+from providers import (cert_transparency, dns_doh, ip_info, network, rdap,
+                       ssl_labs, urlscan, virus_total)
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +82,19 @@ def get_tld(domain: str) -> str:
     return parts[-1] if len(parts) > 1 else ""
 
 
-def _resolve_and_locate(domain: str) -> Tuple[List[str], Optional[str], Dict[str, Any]]:
-    """Résolution DNS puis géolocalisation de la première adresse trouvée."""
-    ips, error = network.resolve_ips(domain)
-    ip_info: Dict[str, Any] = {}
-    if ips:
-        ip_info = network.lookup_ip(ips[0])
-    return ips, error, ip_info
+def _resoudre_et_localiser(domaine: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Résolution DNS par résolveurs publics, puis localisation de la première adresse.
+
+    Deux étapes enchaînées : la localisation a besoin d'une adresse, elle ne
+    peut donc pas être lancée en parallèle de la résolution.
+    """
+    resolution = dns_doh.resoudre(domaine)
+    adresses = resolution.get("ipv4") or resolution.get("ipv6") or []
+    localisation: Dict[str, Any] = {}
+    if adresses:
+        localisation = ip_info.localiser(adresses[0])
+    return resolution, localisation
 
 
 def analyze(domain: str) -> Dict[str, Any]:
@@ -95,6 +103,19 @@ def analyze(domain: str) -> Dict[str, Any]:
 
     Ne lève jamais pour un simple échec réseau : les erreurs sont consignées dans
     le champ 'errors' de chaque section, la fiche reste consultable.
+
+    Les sources interrogées, et ce que chacune apporte :
+
+      RDAP (ICANN)          qui a enregistré le domaine, quand, jusqu'à quand
+      Cloudflare + Google   adresses réelles, d'après deux résolveurs publics
+      RDAP/IP + IPinfo      propriétaire officiel du bloc, puis localisation
+      Qualys SSL Labs       note de A+ à F sur la configuration du chiffrement
+      VirusTotal            verdict de plus de 70 moteurs de sécurité
+      crt.sh                sous-domaines révélés par les journaux publics
+      urlscan.io            hébergeur et réputation observés sur le terrain
+
+    Chaque source est indépendante : si l'une échoue, les autres répondent
+    toujours et la fiche indique ce qui manque, plutôt que de tout annuler.
     """
     domain = normalize_domain(domain)
     tld = get_tld(domain)
@@ -104,13 +125,16 @@ def analyze(domain: str) -> Dict[str, Any]:
     registered = True
     rdap_available = True
 
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=9) as pool:
         future_rdap = pool.submit(rdap.lookup, domain)
-        future_dns = pool.submit(network.dns_records, domain)
-        future_ips = pool.submit(_resolve_and_locate, domain)
+        future_dns = pool.submit(dns_doh.enregistrements, domain)
+        future_resolution = pool.submit(_resoudre_et_localiser, domain)
         future_https = pool.submit(network.check_https, domain)
         future_tls = pool.submit(network.tls_certificate, domain)
         future_urlscan = pool.submit(urlscan.lookup, domain)
+        future_ssl = pool.submit(ssl_labs.evaluer, domain)
+        future_vt = pool.submit(virus_total.reputation, domain)
+        future_ct = pool.submit(cert_transparency.sous_domaines, domain)
 
         try:
             rdap_data = future_rdap.result()
@@ -126,15 +150,19 @@ def analyze(domain: str) -> Dict[str, Any]:
         try:
             dns_data = future_dns.result()
         except Exception as exc:                              # noqa: BLE001
-            dns_data = {"ns": [], "mx": [], "txt": [], "available": False}
+            dns_data = {"ns": [], "mx": [], "txt": [], "erreur": str(exc)}
             errors.append(f"DNS : {type(exc).__name__}: {exc}")
 
         try:
-            ips, dns_error, ip_info = future_ips.result()
+            resolution, ip_info_data = future_resolution.result()
+            ips = resolution.get("ipv4") or []
         except Exception as exc:                              # noqa: BLE001
-            ips, dns_error, ip_info = [], f"{type(exc).__name__}: {exc}", {}
-        if dns_error:
-            errors.append(f"Résolution DNS : {dns_error}")
+            resolution, ip_info_data, ips = {}, {}, []
+            errors.append(f"Résolution DNS : {type(exc).__name__}: {exc}")
+        if resolution.get("erreur"):
+            errors.append(f"Résolution DNS : {resolution['erreur']}")
+        if resolution.get("divergence"):
+            errors.append(f"Résolution DNS : {resolution['divergence']}")
 
         try:
             https_data = future_https.result()
@@ -161,26 +189,79 @@ def analyze(domain: str) -> Dict[str, Any]:
                             "error": f"{type(exc).__name__}: {exc}"}
             errors.append(f"urlscan.io : {type(exc).__name__}: {exc}")
 
+        try:
+            ssl_data = future_ssl.result()
+        except Exception as exc:                              # noqa: BLE001
+            ssl_data = {"disponible": False, "source": "Qualys SSL Labs",
+                        "erreur": f"{type(exc).__name__}: {exc}"}
+        if not ssl_data.get("disponible") and ssl_data.get("erreur") \
+                and "désactivée" not in str(ssl_data["erreur"]):
+            errors.append(f"SSL Labs : {ssl_data['erreur']}")
+
+        try:
+            vt_data = future_vt.result()
+        except Exception as exc:                              # noqa: BLE001
+            vt_data = {"disponible": False, "source": "VirusTotal",
+                       "erreur": f"{type(exc).__name__}: {exc}"}
+
+        try:
+            ct_data = future_ct.result()
+        except Exception as exc:                              # noqa: BLE001
+            ct_data = {"disponible": False,
+                       "source": "Journaux de transparence des certificats (crt.sh)",
+                       "erreur": f"{type(exc).__name__}: {exc}"}
+        if not ct_data.get("disponible") and ct_data.get("erreur") \
+                and "désactivée" not in str(ct_data["erreur"]):
+            errors.append(f"Journaux de certificats : {ct_data['erreur']}")
+
     if not registered:
         rdap_data = {"registrar": None, "age_days": None, "status": [],
                      "nameservers": [], "source": "RDAP (non enregistré)"}
+
+    # Les informations de résolution qui portent un sens pour l'analyse sont
+    # replacées dans le bloc DNS : « divergence » signale un désaccord entre
+    # résolveurs sur l'EXISTENCE du nom (propagation anormale ou filtrage). Le
+    # simple écart d'adresses entre résolveurs, lui, est normal pour tout site
+    # réparti sur plusieurs serveurs et n'est donc pas un signal.
+    dns_pour_analyse = dict(dns_data)
+    dns_pour_analyse["divergence"] = resolution.get("divergence")
+    dns_pour_analyse["existe"] = resolution.get("existe")
+    dns_pour_analyse["adresses_divergent"] = resolution.get("adresses_divergent")
 
     payload = {
         "domain": domain,
         "tld": tld,
         "rdap": rdap_data,
-        "ip": ip_info,
+        "ip": ip_info_data,
         "https": https_data,
-        "dns": dns_data,
+        "dns": dns_pour_analyse,
+        "resolution": resolution,
         "urlscan": urlscan_data,
+        "ssl_labs": ssl_data,
+        "virus_total": vt_data,
+        "cert_transparency": ct_data,
         "registered": registered,
         "rdap_available": rdap_available,
     }
     evaluation = risk.evaluate(payload)
+    # La synthèse en langage courant est construite après le score : elle
+    # s'appuie sur les mêmes données, mais les présente pour un lecteur qui
+    # n'est pas informaticien.
+    #
+    # Le niveau technique lui est transmis explicitement. Sans cela, la
+    # fonction ne le trouvait pas dans les données et concluait « vérification
+    # incomplète » sur des domaines parfaitement analysés — github.com, avec
+    # trois signes favorables, aucun défavorable et un score de 0, était
+    # annoncé comme non vérifié.
+    synthese = explications.resume({
+        **payload,
+        "risk_level": evaluation["risk_level"],
+        "risk_score": evaluation["risk_score"],
+    })
 
     # Le pays affiché est celui de l'hébergement (le plus parlant), avec repli
     # sur le pays du registrar puis du titulaire.
-    country = (ip_info.get("country") or rdap_data.get("registrar_country")
+    country = (ip_info_data.get("pays") or rdap_data.get("registrar_country")
                or rdap_data.get("registrant_country"))
 
     age_days = rdap_data.get("age_days")
@@ -191,16 +272,16 @@ def analyze(domain: str) -> Dict[str, Any]:
         "registrar": rdap_data.get("registrar"),
         "registrar_id": rdap_data.get("registrar_id"),
         "country": country,
-        "country_code": ip_info.get("country_code") or None,
+        "country_code": ip_info_data.get("pays") or None,
         "registrar_country": rdap_data.get("registrar_country"),
         "registrant_country": rdap_data.get("registrant_country"),
         "ip": (ips[0] if ips else None),
-        "all_ips": ips,
-        "asn": ip_info.get("asn"),
-        "isp": ip_info.get("isp"),
-        "org": ip_info.get("org"),
-        "city": ip_info.get("city"),
-        "hosting": ip_info.get("hosting"),
+        "all_ips": resolution.get("ipv4", []) + resolution.get("ipv6", []),
+        "asn": ip_info_data.get("asn"),
+        "isp": ip_info_data.get("organisation"),
+        "org": ip_info_data.get("proprietaire") or ip_info_data.get("organisation"),
+        "city": ip_info_data.get("ville"),
+        "hosting": ip_info_data.get("hebergement"),
         "domain_age_days": age_days,
         "domain_age_text": humanize_age(age_days),
         "created_at_domain": rdap_data.get("created_at"),
@@ -210,21 +291,29 @@ def analyze(domain: str) -> Dict[str, Any]:
         "registry_status": rdap_data.get("status") or [],
         "nameservers": rdap_data.get("nameservers") or [],
         "dns": dns_data,
+        "resolution": resolution,
+        "ip_detail": ip_info_data,
         "https_ok": bool(https_data.get("ok")),
         "https_status": https_data.get("status_code"),
         "https_final_url": https_data.get("final_url"),
         "tls": tls_data,
+        "ssl_labs": ssl_data,
+        "virus_total": vt_data,
+        "cert_transparency": ct_data,
         "urlscan": urlscan_data,
         "risk_level": evaluation["risk_level"],
         "risk_score": evaluation["risk_score"],
         "risk_factors": evaluation["risk_factors"],
         "risk_summary": evaluation["risk_summary"],
+        "synthese": synthese,
         "errors": errors,
         "analyzed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     # Champs destinés uniquement à l'enregistrement en base (JSON Supabase)
-    record["raw"] = {"rdap": rdap_data, "ip": ip_info, "https": https_data,
-                     "dns": dns_data, "tls": tls_data}
+    record["raw"] = {"rdap": rdap_data, "ip": ip_info_data, "https": https_data,
+                     "dns": dns_data, "tls": tls_data, "resolution": resolution,
+                     "ssl_labs": ssl_data, "virus_total": vt_data,
+                     "cert_transparency": ct_data}
     return record
 
 

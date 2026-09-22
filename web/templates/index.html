@@ -7,10 +7,11 @@
   <span class="hero-eyebrow">Bienvenue</span>
   <h1>Sachez à qui vous avez affaire <em>avant</em> de faire confiance à un domaine</h1>
   <p class="hero-lead">
-    Saisis un nom de domaine : Domain Intelligence interroge l'API RDAP, le DNS,
-    l'API de géolocalisation ip-api.com, le certificat TLS et l'API de réputation
-    urlscan.io, puis attribue un score de risque argumenté sur 100. Chaque analyse
-    est conservée pour être comparée plus tard.
+    Saisis un nom de domaine : Domain Intelligence vérifie qui l'a enregistré et
+    depuis quand, où il est hébergé, si sa connexion est correctement chiffrée,
+    s'il expose des services qui devraient rester privés, et si des logiciels de
+    sécurité le signalent. La conclusion est écrite en français courant, et le
+    détail technique reste consultable juste en dessous.
   </p>
   <div class="hero-steps">
     <div class="step">
@@ -42,8 +43,9 @@
   </form>
   <p class="hint">
     Accepte aussi une URL complète ou une adresse e-mail : seul le domaine est conservé.
-    L'analyse interroge l'API RDAP, le DNS, l'API ip-api.com, le certificat TLS
-    et l'API urlscan.io.
+    Sources interrogées : les registres officiels des noms de domaine (RDAP, norme
+    ICANN), deux résolveurs DNS publics, les registres d'adresses IP, Qualys SSL Labs,
+    les journaux publics de certificats, et urlscan.io.
   </p>
 </section>
 
@@ -94,6 +96,83 @@
       </p>
     </div>
   </header>
+
+  {# ---- Conclusion en langage courant -------------------------------------
+     Placée avant la jauge technique, et non après : la personne qui a reçu un
+     lien douteux a besoin de la conclusion d'abord, du détail ensuite. Le
+     vocabulaire employé ici est volontairement celui de tous les jours. ---- #}
+  {% set synth = result.get('synthese') if result.get('synthese') is mapping else none %}
+  {% if synth %}
+  <section class="verdict verdict-{{ synth.get('couleur', 'gris') }}">
+    <div class="verdict-head">
+      <span class="verdict-mark" aria-hidden="true">
+        {%- if synth.get('couleur') == 'vert' -%}&#10003;
+        {%- elif synth.get('couleur') == 'rouge' -%}&#33;
+        {%- elif synth.get('couleur') == 'orange' -%}&#33;
+        {%- else -%}&#63;{%- endif -%}
+      </span>
+      <div>
+        <h2 class="verdict-titre">{{ synth.get('titre') }}</h2>
+        <p class="verdict-texte">{{ synth.get('texte') }}</p>
+      </div>
+    </div>
+
+    {% if synth.get('conseil') %}
+    <div class="verdict-conseil">
+      <strong>Ce qu'il faut faire</strong>
+      <p>{{ synth.get('conseil') }}</p>
+    </div>
+    {% endif %}
+
+    {% if synth.get('signes_favorables') or synth.get('signes_defavorables') %}
+    <div class="verdict-signes">
+      {% if synth.get('signes_defavorables') %}
+      <div class="signes signes-mauvais">
+        <h3>Ce qui pose problème</h3>
+        <ul>
+          {% for signe in synth.get('signes_defavorables') %}
+          <li>
+            {%- if signe is mapping -%}
+              {%- if signe.get('gravite') == 'critique' -%}
+                <span class="grav grav-critique">grave</span>
+              {%- elif signe.get('gravite') == 'eleve' -%}
+                <span class="grav grav-eleve">sérieux</span>
+              {%- endif -%}
+              {{ signe.get('texte') }}
+            {%- else -%}
+              {{ signe }}
+            {%- endif -%}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if synth.get('signes_favorables') %}
+      <div class="signes signes-bons">
+        <h3>Ce qui rassure</h3>
+        <ul>
+          {% for signe in synth.get('signes_favorables') %}
+          <li>{{ signe }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if synth.get('limites') %}
+    <details class="verdict-limites">
+      <summary>Ce que cette analyse ne permet pas d'affirmer</summary>
+      <ul>
+        {% for limite in synth.get('limites') %}
+        <li>{{ limite }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </section>
+  {% endif %}
 
   {# ---- Diagramme du niveau de risque : jauge circulaire + échelle graduée ---- #}
   <div class="risk-figure risk-{{ niveau if score is not none else 'none' }}">
@@ -293,6 +372,95 @@
       Données publiques relevées par urlscan.io sur les derniers scans de ce domaine.
       {% if us.get('report_url') %}
       <a href="{{ us.get('report_url') }}" target="_blank" rel="noopener">Voir le rapport public ↗</a>
+      {% endif %}
+    </p>
+  </section>
+  {% endif %}
+
+  {# ---- Vérifications menées par des organismes tiers ---------------------
+     Ces trois sources ne disent pas la même chose, et c'est voulu : SSL Labs
+     note la qualité du chiffrement, VirusTotal donne le verdict de moteurs
+     antivirus, les journaux de certificats révèlent ce que le domaine expose
+     publiquement. Les regrouper sous un titre commun évite au lecteur de
+     croire qu'elles se recoupent. ---- #}
+  {% set sl = result.get('ssl_labs') if result.get('ssl_labs') is mapping else none %}
+  {% set vt = result.get('virus_total') if result.get('virus_total') is mapping else none %}
+  {% set ct = result.get('cert_transparency') if result.get('cert_transparency') is mapping else none %}
+  {% if (sl and sl.get('disponible')) or (vt and vt.get('disponible')) or (ct and ct.get('disponible')) %}
+  <section class="block">
+    <h2>Vérifications menées par des organismes tiers</h2>
+    <div class="facts">
+      {% if sl and sl.get('disponible') %}
+      <div class="fact">
+        <span class="k">Note du chiffrement <em>(Qualys SSL Labs)</em></span>
+        <span class="v">
+          {{ sl.get('note') or '—' }}
+          {%- if sl.get('niveau') %} <em>{{ sl.get('niveau') }}</em>{% endif %}
+        </span>
+      </div>
+      {% endif %}
+
+      {% if vt and vt.get('disponible') %}
+      <div class="fact">
+        <span class="k">Moteurs de sécurité <em>(VirusTotal)</em></span>
+        <span class="v">
+          {%- if vt.get('moteurs_malveillants') -%}
+            {{ vt.get('moteurs_malveillants') }} sur {{ vt.get('moteurs_total') }} signalent un danger
+          {%- elif vt.get('moteurs_suspects') -%}
+            {{ vt.get('moteurs_suspects') }} sur {{ vt.get('moteurs_total') }} émettent un doute
+          {%- else -%}
+            aucun signalement sur {{ vt.get('moteurs_total') }} moteurs
+          {%- endif -%}
+        </span>
+      </div>
+      {% if vt.get('categories') %}
+      <div class="fact wide">
+        <span class="k">Classement du site</span>
+        <span class="v">{{ vt.get('categories') | join(', ') }}</span>
+      </div>
+      {% endif %}
+      {% endif %}
+
+      {% if ct and ct.get('disponible') %}
+      <div class="fact">
+        <span class="k">Sous-domaines publics <em>(journaux de certificats)</em></span>
+        <span class="v">{{ ct.get('nombre') }}
+          <em>révélé(s) par les certificats émis</em></span>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if sl and sl.get('disponible') and sl.get('explication') %}
+    <p class="muted small">{{ sl.get('explication') }}</p>
+    {% endif %}
+
+    {% if ct and ct.get('disponible') and ct.get('environnements_exposes') %}
+    <div class="exposes">
+      <h3>Services visibles publiquement</h3>
+      <p class="muted small">
+        Ces noms de serveurs apparaissent dans les certificats émis pour ce domaine.
+        Leur présence ne prouve pas qu'ils soient accessibles, mais un service
+        d'administration qui répond depuis l'extérieur est une faiblesse.
+      </p>
+      <ul>
+        {% for env in ct.get('environnements_exposes')[:12] %}
+        <li>
+          <code>{{ env.get('nom') }}</code>
+          <span class="tag tag-{{ 'alerte' if env.get('type') in ['administration', 'base de données', 'sauvegardes', 'réseau interne', 'intégration continue'] else 'neutre' }}">{{ env.get('type') }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <p class="muted small">
+      {% if vt and not vt.get('disponible') %}
+        VirusTotal n'a pas été interrogé : sa clé est facultative et n'est pas
+        configurée (voir <code>VIRUSTOTAL_KEY</code> dans <code>.env</code>).
+      {% endif %}
+      {% if ct and not ct.get('disponible') %}
+        La recherche dans les journaux de certificats a échoué : ce service
+        gratuit répond souvent en erreur lorsqu'il est surchargé.
       {% endif %}
     </p>
   </section>

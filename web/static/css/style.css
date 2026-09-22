@@ -467,6 +467,135 @@ td.actions { display: flex; gap: 6px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
+/* --------------------------------------------------------------------------
+   Conclusion en langage courant
+
+   Bloc placé avant la jauge technique. Il s'adresse à quelqu'un qui n'est pas
+   informaticien : typographie plus grande, vocabulaire courant, et une réponse
+   explicite à la seule question qu'il se pose — est-ce que je peux y aller ?
+   La couleur reprend celles du niveau de risque, pour que l'ensemble reste
+   cohérent d'un bout à l'autre de la fiche.
+   -------------------------------------------------------------------------- */
+.verdict {
+  margin: 0 0 22px; padding: 22px 24px 20px;
+  border: 1px solid var(--border); border-left-width: 4px;
+  border-radius: 14px; background: var(--panel-2);
+}
+.verdict-vert   { border-left-color: var(--low);    background: linear-gradient(180deg, var(--low-bg), var(--panel-2) 90%); }
+.verdict-orange { border-left-color: var(--medium); background: linear-gradient(180deg, var(--medium-bg), var(--panel-2) 90%); }
+.verdict-rouge  { border-left-color: var(--high);   background: linear-gradient(180deg, var(--high-bg), var(--panel-2) 90%); }
+.verdict-gris   { border-left-color: var(--muted); }
+
+.verdict-head { display: flex; gap: 15px; align-items: flex-start; }
+.verdict-mark {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--font-display); font-size: 18px; font-weight: 700;
+  border: 2px solid currentColor;
+}
+.verdict-vert   .verdict-mark { color: var(--low); }
+.verdict-orange .verdict-mark { color: var(--medium); }
+.verdict-rouge  .verdict-mark { color: var(--high); }
+.verdict-gris   .verdict-mark { color: var(--muted); }
+
+.verdict-titre {
+  font-family: var(--font-display); font-size: 21px; font-weight: 600;
+  letter-spacing: -.02em; margin: 3px 0 7px; color: var(--text);
+}
+.verdict-texte { color: var(--text-soft); font-size: 14.5px; line-height: 1.65; margin: 0; }
+
+.verdict-conseil {
+  margin-top: 17px; padding: 14px 16px;
+  background: rgba(0, 0, 0, .26);
+  border: 1px solid var(--border); border-radius: 11px;
+}
+.verdict-conseil strong {
+  display: block; font-family: var(--font-display);
+  font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 7px;
+}
+.verdict-conseil p { margin: 0; color: var(--text-soft); font-size: 13.5px; line-height: 1.6; }
+
+.verdict-signes {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px; margin-top: 18px;
+}
+.signes h3 {
+  font-family: var(--font-display); font-size: 11px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
+  margin: 0 0 9px; color: var(--muted);
+}
+.signes ul { list-style: none; margin: 0; padding: 0; }
+.signes li {
+  position: relative; padding-left: 17px; margin-bottom: 9px;
+  font-size: 13.5px; line-height: 1.6; color: var(--text-soft);
+}
+.signes li::before {
+  position: absolute; left: 0; top: 0; font-weight: 700;
+}
+.signes-bons li::before   { content: "+"; color: var(--low); }
+.signes-mauvais li::before { content: "!"; color: var(--high); }
+
+.grav {
+  display: inline-block; margin-right: 7px; padding: 1px 7px;
+  border-radius: 5px; font-size: 10px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px;
+}
+.grav-critique { color: #fff; background: var(--high); }
+.grav-eleve    { color: var(--high); background: var(--high-bg); border: 1px solid var(--high-bd); }
+
+.verdict-limites { margin-top: 17px; border-top: 1px solid var(--border-soft); padding-top: 13px; }
+.verdict-limites summary {
+  cursor: pointer; font-size: 12.5px; color: var(--muted);
+  font-family: var(--font-display); letter-spacing: .02em;
+}
+.verdict-limites summary:hover { color: var(--text-soft); }
+.verdict-limites ul { margin: 11px 0 0; padding-left: 19px; }
+.verdict-limites li { font-size: 12.5px; line-height: 1.6; color: var(--muted); margin-bottom: 6px; }
+
+@media (max-width: 560px) {
+  .verdict { padding: 18px 17px 16px; }
+  .verdict-titre { font-size: 18px; }
+}
+
+/* --------------------------------------------------------------------------
+   Services exposés publiquement
+
+   Liste des noms de serveurs révélés par les journaux de certificats. Le but
+   est de rendre visible, d'un coup d'œil, ce qu'un domaine laisse paraître :
+   un « admin », un « phpmyadmin » ou un « git » signalé en rouge se remarque
+   immédiatement, ce qui est exactement l'effet recherché.
+   -------------------------------------------------------------------------- */
+.exposes { margin-top: 19px; }
+.exposes h3 {
+  font-family: var(--font-display); font-size: 11px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 6px;
+}
+.exposes ul {
+  list-style: none; margin: 12px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.exposes li {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 8px;
+  background: var(--panel-3); border: 1px solid var(--border);
+}
+.exposes code {
+  font-family: var(--mono); font-size: 12px; color: var(--text-soft);
+}
+
+.tag {
+  padding: 1px 7px; border-radius: 5px;
+  font-family: var(--font-display); font-size: 10px; font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase;
+  border: 1px solid var(--border);
+}
+.tag-neutre { color: var(--muted); }
+.tag-alerte {
+  color: var(--high); background: var(--high-bg); border-color: var(--high-bd);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

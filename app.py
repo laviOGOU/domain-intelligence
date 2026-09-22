@@ -1,17 +1,4 @@
-"""
-app.py — Domain Intelligence : fiche d'évaluation d'un nom de domaine.
 
-Lancement :
-    .venv/Scripts/python.exe app.py
-puis http://127.0.0.1:5001
-
-Fonctionnalités :
-  * saisie d'un domaine, interrogation d'API externes (RDAP, DNS, géolocalisation IP, TLS)
-  * fiche de résultats
-  * niveau de risque argumenté
-  * enregistrement dans Supabase (ou stockage local si Supabase n'est pas configuré)
-  * historique consultable, réaffichable et supprimable
-"""
 import logging
 import sys
 
@@ -209,7 +196,9 @@ def main() -> int:
 {'=' * 68}
   URL          : http://{config.HOST}:{config.PORT}
   Stockage     : {db.backend_status()['message']}
-  API externe  : RDAP (rdap.org), ip-api.com, TLS direct
+  Sources      : RDAP (ICANN) · Cloudflare + Google (résolution DNS) ·
+                 RDAP/IP + IPinfo (adresses) · Qualys SSL Labs (chiffrement) ·
+                 journaux de certificats · urlscan.io · VirusTotal (si clé)
   En attente   : {en_attente} analyse(s) à renvoyer vers Supabase
 {'=' * 68}
 """

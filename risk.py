@@ -142,9 +142,67 @@ def evaluate(data: Dict[str, Any]) -> Dict[str, Any]:
              f"Redirige vers {https.get('final_url')}.")
 
     # 9. Proxy / VPN
-    if ip.get("proxy"):
+    if ip.get("vpn_ou_proxy"):
         _add(factors, "Proxy ou VPN détecté", 10,
-             "L'adresse IP est signalée comme proxy/VPN, ce qui masque l'hébergeur réel.")
+             "L'adresse IP est signalée comme masquée, ce qui empêche "
+             "d'identifier l'hébergeur réel.")
+
+    # --- Note de configuration TLS (Qualys SSL Labs) ---
+    # Une note faible est un vrai signal : elle traduit un serveur mal tenu, et
+    # un serveur mal tenu est plus souvent compromis. Une source indisponible
+    # n'est PAS pénalisée : une panne de notre côté ne doit pas dégrader la
+    # réputation d'un domaine.
+    ssl_data = data.get("ssl_labs") or {}
+    if ssl_data.get("disponible"):
+        note = ssl_data.get("note")
+        if note in ("A+", "A", "A-"):
+            _add(factors, f"Configuration TLS notée {note}", -6,
+                 f"Qualys SSL Labs attribue la note {note} à ce serveur.")
+        elif note in ("B", "C"):
+            _add(factors, f"Configuration TLS notée {note}", 6,
+                 str(ssl_data.get("explication") or
+                     "Configuration perfectible, souvent par maintien "
+                     "d'anciennes versions du protocole."))
+        elif note in ("D", "E", "F"):
+            _add(factors, f"Configuration TLS notée {note}", 20,
+                 str(ssl_data.get("explication") or
+                     "Le chiffrement du site est mal configuré."))
+        elif note in ("T", "M"):
+            _add(factors, f"Configuration TLS notée {note}", 25,
+                 str(ssl_data.get("explication") or
+                     "Le certificat du site ne correspond pas au domaine."))
+
+    # --- Réputation (VirusTotal) ---
+    # La source la plus lourde du calcul : un seul moteur qui signale est plus
+    # parlant que dix imprécisions de configuration.
+    vt_data = data.get("virus_total") or {}
+    if vt_data.get("disponible"):
+        malveillants = vt_data.get("moteurs_malveillants") or 0
+        suspects = vt_data.get("moteurs_suspects") or 0
+        total = vt_data.get("moteurs_total") or 0
+        if malveillants:
+            _add(factors, "Site malveillant confirmé", 55,
+                 f"{malveillants} moteur(s) de sécurité sur {total} signalent "
+                 f"ce domaine comme dangereux.")
+        elif suspects >= 2:
+            _add(factors, "Site jugé suspect", 25,
+                 f"{suspects} moteurs sur {total} le jugent suspect.")
+        elif suspects == 1:
+            _add(factors, "Un moteur émet un doute", 10,
+                 f"1 moteur sur {total} le juge suspect.")
+        elif total:
+            _add(factors, "Aucun signalement de sécurité", -10,
+                 f"Aucun des {total} moteurs consultés ne signale ce domaine.")
+
+    # --- Cohérence entre résolveurs DNS ---
+    # Ne vise que le désaccord sur l'EXISTENCE du nom, pas l'écart d'adresses :
+    # deux résolveurs renvoient normalement des adresses différentes pour tout
+    # site réparti sur plusieurs serveurs (Google, GitHub). Pénaliser cet écart
+    # reviendrait à suspecter les sites les plus légitimes.
+    dns_data = data.get("dns") or {}
+    if dns_data.get("divergence"):
+        _add(factors, "Réponses DNS contradictoires", 12,
+             str(dns_data["divergence"]))
 
     # 10. Réputation observée via urlscan.io (API externe)
     urlscan = data.get("urlscan") or {}
@@ -196,14 +254,39 @@ def _check_name_pattern(factors: List[Dict[str, Any]], label: str) -> None:
 
 
 def _finalise(factors: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Agrège les facteurs, borne le score et en déduit le niveau."""
+    """
+    Agrège les facteurs, borne le score et en déduit le niveau.
+
+    PLANCHER DE SÉCURITÉ
+
+    Un signalement d'antivirus ne se compense pas par une bonne hygiène. Un
+    domaine signalé par cinq moteurs obtenait « risque modéré » dès lors qu'il
+    était ancien, correctement chiffré et hébergé chez un professionnel : ces
+    bonnes notes, cumulées, effaçaient le signalement. C'est exactement le
+    calcul qu'un escroc soigneux obtient.
+
+    D'où ce plancher : un signalement confirmé impose le niveau élevé, quels
+    que soient les points favorables par ailleurs. Les facteurs restent tous
+    affichés, pour que le lecteur voie sur quoi porte la réserve.
+    """
     score = max(0, min(100, sum(f["points"] for f in factors)))
-    if score >= RISK_HIGH_THRESHOLD:
+
+    signalement_confirme = any(f["label"] == "Site malveillant confirmé"
+                               for f in factors)
+
+    if score >= RISK_HIGH_THRESHOLD or signalement_confirme:
         level = "HIGH"
     elif score >= RISK_MEDIUM_THRESHOLD:
         level = "MEDIUM"
     else:
         level = "LOW"
+
+    if signalement_confirme and score < RISK_HIGH_THRESHOLD:
+        # Le score affiché doit rester cohérent avec le niveau annoncé : le
+        # lecteur qui voit « 31 / 100 » et « risque élevé » sans explication
+        # conclurait à une erreur de l'outil.
+        score = RISK_HIGH_THRESHOLD
+
     return {
         "risk_score": score,
         "risk_level": level,

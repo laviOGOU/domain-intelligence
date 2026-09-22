@@ -36,7 +36,8 @@
       {{ backend.backend | upper }}
     </span>
     {{ backend.message }}
-    &nbsp;·&nbsp; Sources : RDAP, DNS, ip-api.com, TLS direct, API urlscan.io
+    &nbsp;·&nbsp; Sources : RDAP (ICANN), Cloudflare + Google DNS, registres
+    d'adresses IP, Qualys SSL Labs, journaux de certificats, urlscan.io, VirusTotal
   </footer>
 
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
