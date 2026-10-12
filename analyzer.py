@@ -145,20 +145,23 @@ def analyze(domain: str) -> Dict[str, Any]:
         except rdap.RdapError as exc:
             # Panne ou quota : on ne peut rien conclure sur l'enregistrement.
             rdap_available = False
-            errors.append(f"RDAP : {exc}")
+            errors.append("RDAP : Erreur lors de l'interrogation du service.")
+            logger.warning(f"RDAP lookup failed for {domain}: {exc}")
 
         try:
             dns_data = future_dns.result()
         except Exception as exc:                              # noqa: BLE001
-            dns_data = {"ns": [], "mx": [], "txt": [], "erreur": str(exc)}
-            errors.append(f"DNS : {type(exc).__name__}: {exc}")
+            dns_data = {"ns": [], "mx": [], "txt": [], "erreur": "Service DNS indisponible."}
+            errors.append("DNS : Une erreur est survenue lors de la récupération des enregistrements.")
+            logger.warning(f"DNS records lookup failed for {domain}: {type(exc).__name__}: {exc}")
 
         try:
             resolution, ip_info_data = future_resolution.result()
             ips = resolution.get("ipv4") or []
         except Exception as exc:                              # noqa: BLE001
             resolution, ip_info_data, ips = {}, {}, []
-            errors.append(f"Résolution DNS : {type(exc).__name__}: {exc}")
+            errors.append("Résolution DNS : Erreur lors de la résolution ou de la localisation IP.")
+            logger.warning(f"DNS resolution/IP lookup failed for {domain}: {type(exc).__name__}: {exc}")
         if resolution.get("erreur"):
             errors.append(f"Résolution DNS : {resolution['erreur']}")
         if resolution.get("divergence"):
@@ -168,51 +171,58 @@ def analyze(domain: str) -> Dict[str, Any]:
             https_data = future_https.result()
         except Exception as exc:                              # noqa: BLE001
             https_data = {"ok": False, "status_code": None, "final_url": None,
-                          "redirects_to_other_host": False, "error": str(exc)}
-            errors.append(f"HTTPS : {exc}")
+                          "redirects_to_other_host": False, "error": "Vérification HTTPS échouée."}
+            errors.append("HTTPS : Erreur lors de la vérification de la configuration HTTPS.")
+            logger.warning(f"HTTPS check failed for {domain}: {exc}")
 
         try:
             tls_data = future_tls.result()
         except Exception as exc:                              # noqa: BLE001
-            tls_data = {"error": str(exc)}
-            errors.append(f"TLS : {exc}")
+            tls_data = {"error": "Échec de la récupération du certificat TLS."}
+            errors.append("TLS : Erreur lors de la récupération du certificat TLS.")
+            logger.warning(f"TLS certificate lookup failed for {domain}: {exc}")
 
         try:
             urlscan_data = future_urlscan.result()
         except urlscan.UrlscanError as exc:
             # API externe indisponible ou quota atteint : limite signalée, pas
             # de pénalité (voir risk.evaluate).
-            urlscan_data = {"available": False, "source": "urlscan.io", "error": str(exc)}
-            errors.append(f"urlscan.io : {exc}")
+            urlscan_data = {"available": False, "source": "urlscan.io", "error": "Service urlscan.io indisponible."}
+            errors.append("urlscan.io : Erreur lors de l'interrogation du service.")
+            logger.warning(f"Urlscan API error for {domain}: {exc}")
         except Exception as exc:                              # noqa: BLE001
             urlscan_data = {"available": False, "source": "urlscan.io",
-                            "error": f"{type(exc).__name__}: {exc}"}
-            errors.append(f"urlscan.io : {type(exc).__name__}: {exc}")
+                            "error": "Une erreur inattendue est survenue."}
+            errors.append("urlscan.io : Une erreur inattendue est survenue.")
+            logger.warning(f"Urlscan lookup failed for {domain}: {type(exc).__name__}: {exc}")
 
         try:
             ssl_data = future_ssl.result()
         except Exception as exc:                              # noqa: BLE001
             ssl_data = {"disponible": False, "source": "Qualys SSL Labs",
-                        "erreur": f"{type(exc).__name__}: {exc}"}
+                        "erreur": "Échec de l'évaluation SSL Labs."}
+            logger.warning(f"SSL Labs evaluation failed for {domain}: {type(exc).__name__}: {exc}")
         if not ssl_data.get("disponible") and ssl_data.get("erreur") \
                 and "désactivée" not in str(ssl_data["erreur"]):
-            errors.append(f"SSL Labs : {ssl_data['erreur']}")
+            errors.append("SSL Labs : Échec de l'évaluation.")
 
         try:
             vt_data = future_vt.result()
         except Exception as exc:                              # noqa: BLE001
             vt_data = {"disponible": False, "source": "VirusTotal",
-                       "erreur": f"{type(exc).__name__}: {exc}"}
+                       "erreur": "Échec de la récupération de la réputation VirusTotal."}
+            logger.warning(f"VirusTotal lookup failed for {domain}: {type(exc).__name__}: {exc}")
 
         try:
             ct_data = future_ct.result()
         except Exception as exc:                              # noqa: BLE001
             ct_data = {"disponible": False,
                        "source": "Journaux de transparence des certificats (crt.sh)",
-                       "erreur": f"{type(exc).__name__}: {exc}"}
+                       "erreur": "Échec de la récupération des sous-domaines."}
+            logger.warning(f"Cert Transparency lookup failed for {domain}: {type(exc).__name__}: {exc}")
         if not ct_data.get("disponible") and ct_data.get("erreur") \
                 and "désactivée" not in str(ct_data["erreur"]):
-            errors.append(f"Journaux de certificats : {ct_data['erreur']}")
+            errors.append("Journaux de certificats : Échec de la récupération des sous-domaines.")
 
     if not registered:
         rdap_data = {"registrar": None, "age_days": None, "status": [],
@@ -281,59 +291,4 @@ def analyze(domain: str) -> Dict[str, Any]:
         "isp": ip_info_data.get("organisation"),
         "org": ip_info_data.get("proprietaire") or ip_info_data.get("organisation"),
         "city": ip_info_data.get("ville"),
-        "hosting": ip_info_data.get("hebergement"),
-        "domain_age_days": age_days,
-        "domain_age_text": humanize_age(age_days),
-        "created_at_domain": rdap_data.get("created_at"),
-        "expires_at": rdap_data.get("expires_at"),
-        "updated_at_domain": rdap_data.get("updated_at"),
-        "days_until_expiry": rdap_data.get("days_until_expiry"),
-        "registry_status": rdap_data.get("status") or [],
-        "nameservers": rdap_data.get("nameservers") or [],
-        "dns": dns_data,
-        "resolution": resolution,
-        "ip_detail": ip_info_data,
-        "https_ok": bool(https_data.get("ok")),
-        "https_status": https_data.get("status_code"),
-        "https_final_url": https_data.get("final_url"),
-        "tls": tls_data,
-        "ssl_labs": ssl_data,
-        "virus_total": vt_data,
-        "cert_transparency": ct_data,
-        "urlscan": urlscan_data,
-        "risk_level": evaluation["risk_level"],
-        "risk_score": evaluation["risk_score"],
-        "risk_factors": evaluation["risk_factors"],
-        "risk_summary": evaluation["risk_summary"],
-        "synthese": synthese,
-        "errors": errors,
-        "analyzed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    }
-    # Champs destinés uniquement à l'enregistrement en base (JSON Supabase)
-    record["raw"] = {"rdap": rdap_data, "ip": ip_info_data, "https": https_data,
-                     "dns": dns_data, "tls": tls_data, "resolution": resolution,
-                     "ssl_labs": ssl_data, "virus_total": vt_data,
-                     "cert_transparency": ct_data}
-    return record
-
-
-def humanize_age(days: Optional[int]) -> str:
-    """Traduit un nombre de jours en libellé lisible (« 3 ans et 2 mois »)."""
-    # La valeur peut venir d'un gabarit Jinja où la clé est absente : on valide
-    # le type plutôt que de supposer un entier.
-    if not isinstance(days, (int, float)) or isinstance(days, bool):
-        return "inconnu"
-    days = int(days)
-    if days < 0:
-        return "date future incohérente"
-    if days < 30:
-        return f"{days} jour{'s' if days > 1 else ''}"
-    if days < 365:
-        months = days // 30
-        return f"{months} mois"
-    years, remainder = divmod(days, 365)
-    months = remainder // 30
-    text = f"{years} an{'s' if years > 1 else ''}"
-    if months:
-        text += f" et {months} mois"
-    return text
+        "hosting": ip_info-
