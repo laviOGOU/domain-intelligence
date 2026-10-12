@@ -66,7 +66,7 @@ def analyze_route():
         result = analyzer.analyze(raw)
     except analyzer.InvalidDomain as exc:
         logger.warning("Saisie refusée : %r (%s)", raw, exc)
-        return render_template("index.html", result=None, error=str(exc), saved=None), 400
+        return render_template("index.html", result=None, error="Le nom de domaine fourni est invalide.", saved=None), 400
     except Exception as exc:                                  # noqa: BLE001
         logger.exception("Analyse impossible pour %r", raw)
         return render_template("index.html", result=None,
@@ -123,7 +123,8 @@ def api_analyze():
     try:
         result = analyzer.analyze(raw)
     except analyzer.InvalidDomain as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        logger.warning("Saisie API refusée pour %r : %s", raw, exc)
+        return jsonify({"ok": False, "error": "Le nom de domaine fourni est invalide."}), 400
     except rdap.RdapError as exc:
         logger.error("Erreur RDAP pour %r : %s", raw, exc)
         return jsonify({"ok": False, "error": "Analyse impossible : une source de données externe est indisponible."}), 502
