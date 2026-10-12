@@ -70,7 +70,7 @@ def analyze_route():
     except Exception as exc:                                  # noqa: BLE001
         logger.exception("Analyse impossible pour %r", raw)
         return render_template("index.html", result=None,
-                               error=f"Analyse impossible : {type(exc).__name__}: {exc}",
+                               error="Analyse impossible en raison d'une erreur interne.",
                                saved=None), 500
 
     saved = db.save_analysis(result)
@@ -128,7 +128,7 @@ def api_analyze():
         return jsonify({"ok": False, "error": str(exc)}), 502
     except Exception as exc:                                  # noqa: BLE001
         logger.exception("Analyse impossible pour %r", raw)
-        return jsonify({"ok": False, "error": f"{type(exc).__name__}: {exc}"}), 500
+        return jsonify({"ok": False, "error": "Analyse impossible en raison d'une erreur interne."}), 500
 
     saved = db.save_analysis(result) if save else {"ok": False, "skipped": True}
     result.pop("raw", None)
