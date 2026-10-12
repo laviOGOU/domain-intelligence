@@ -125,7 +125,8 @@ def api_analyze():
     except analyzer.InvalidDomain as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except rdap.RdapError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 502
+        logger.error("Erreur RDAP pour %r : %s", raw, exc)
+        return jsonify({"ok": False, "error": "Analyse impossible : une source de données externe est indisponible."}), 502
     except Exception as exc:                                  # noqa: BLE001
         logger.exception("Analyse impossible pour %r", raw)
         return jsonify({"ok": False, "error": "Analyse impossible en raison d'une erreur interne."}), 500
